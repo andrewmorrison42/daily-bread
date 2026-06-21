@@ -1,0 +1,16 @@
+{
+  "name": "Daily Bread — Reading & Prayer Journal",
+  "short_name": "Daily Bread",
+  "description": "A daily Bible reading and prayer tracker with journal.",
+  "start_url": "index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#F4EFE3",
+  "theme_color": "#7C2D2D",
+  "icons": [
+    { "src": "icon-180.png", "sizes": "180x180", "type": "image/png", "purpose": "any" },
+    { "src": "icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
