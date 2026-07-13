@@ -14,11 +14,13 @@ private to each device — nothing is shared or synced between you.
 
 - `index.html` — the app page
 - `app.js` — the app itself
+- `bible-web.json` — the full Bible text (World English Bible, public domain)
 - `manifest.json` — makes it installable
 - `sw.js` — lets it work offline
 - `icon-180.png`, `icon-192.png`, `icon-512.png` — the home-screen icon
 
-All seven files must sit together in the same place.
+All eight files must sit together in the same place. `bible-web.json` is large
+(~4.4 MB) — that's the whole Bible text; it loads once and then works offline.
 
 ---
 

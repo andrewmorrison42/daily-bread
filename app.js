@@ -153,6 +153,38 @@ function App() {
   const [tab, setTab] = useState("today");
   const [loaded, setLoaded] = useState(false);
 
+  // WEB (World English Bible) text — public domain. Loaded lazily on first
+  // reader open so the 4.4MB file doesn't slow the initial app launch. Cached
+  // in memory for the session; the service worker caches the file for offline.
+  const bibleRef = useRef(null);
+  const [bibleState, setBibleState] = useState("idle"); // idle | loading | ready | error
+
+  const loadBible = useCallback(async () => {
+    if (bibleRef.current || bibleState === "loading") return;
+    setBibleState("loading");
+    try {
+      const res = await fetch("bible-web.json");
+      if (!res.ok) throw new Error("fetch failed");
+      bibleRef.current = await res.json();
+      setBibleState("ready");
+    } catch (e) {
+      console.error("Could not load Bible text:", e);
+      setBibleState("error");
+    }
+  }, [bibleState]);
+
+  const getChapter = useCallback((book, chapter) => {
+    const b = bibleRef.current;
+    if (!b || !b[book] || !b[book][String(chapter)]) return null;
+    const verses = b[book][String(chapter)];
+    // Return ordered [ [num, text], ... ]
+    return Object.keys(verses)
+      .sort((a, z) => Number(a) - Number(z))
+      .map((n) => [n, verses[n]]);
+  }, []);
+
+  const bible = { state: bibleState, load: loadBible, getChapter };
+
   useEffect(() => {
     (async () => {
       try {
@@ -218,8 +250,8 @@ function App() {
       </nav>
 
       <main style={styles.main}>
-        {tab === "today" && <Today data={data} persist={persist} setTab={setTab} />}
-        {tab === "reading" && <Reading data={data} persist={persist} />}
+        {tab === "today" && <Today data={data} persist={persist} setTab={setTab} bible={bible} />}
+        {tab === "reading" && <Reading data={data} persist={persist} bible={bible} />}
         {tab === "prayer" && <Prayer data={data} persist={persist} />}
         {tab === "journal" && <Journal data={data} persist={persist} />}
       </main>
@@ -227,8 +259,56 @@ function App() {
   );
 }
 
+// ------------------------------------------------------- PASSAGE READER
+// Renders the WEB text for a given book+chapter. Triggers the lazy Bible
+// load on first open. Collapsible so the chapter isn't always expanded.
+function PassageReader({ book, chapter, bible, startOpen = false }) {
+  const [open, setOpen] = useState(startOpen);
+
+  useEffect(() => {
+    if (open && bible.state === "idle") bible.load();
+  }, [open, bible]);
+
+  const verses = open && bible.state === "ready" ? bible.getChapter(book, chapter) : null;
+
+  return (
+    <div style={styles.readerWrap}>
+      <button onClick={() => setOpen(!open)} style={styles.readerToggle}>
+        {open ? "▾ Hide passage" : "▸ Read the passage"}
+      </button>
+      {open && (
+        <div style={styles.readerBody}>
+          {bible.state === "loading" && <div style={styles.readerNote}>Loading the text…</div>}
+          {bible.state === "error" && (
+            <div style={styles.readerNote}>
+              Couldn't load the text. It needs to load once with an internet connection, then works offline.
+            </div>
+          )}
+          {bible.state === "ready" && !verses && (
+            <div style={styles.readerNote}>Passage not found.</div>
+          )}
+          {verses && (
+            <div>
+              <div style={styles.readerHead}>{book} {chapter}</div>
+              <p style={styles.readerText}>
+                {verses.map(([n, t]) => (
+                  <span key={n}>
+                    <sup style={styles.verseNum}>{n}</sup>
+                    {t}{" "}
+                  </span>
+                ))}
+              </p>
+              <div style={styles.readerCredit}>World English Bible (public domain)</div>
+            </div>
+          )}
+        </div>
+      )}
+    </div>
+  );
+}
+
 // --------------------------------------------------------------------- TODAY
-function Today({ data, persist, setTab }) {
+function Today({ data, persist, setTab, bible }) {
   const { current, sermon } = data;
   const chapters = BOOKS.find((b) => b[0] === current.book)?.[1] || 1;
   const doneList = current.done[current.book] || [];
@@ -300,6 +380,7 @@ function Today({ data, persist, setTab }) {
             <div style={styles.metaLine}>
               {doneList.length} of {chapters} chapters read · {current.pace} {current.paceUnit}/day
             </div>
+            <PassageReader book={current.book} chapter={nextChapter} bible={bible} />
             <button onClick={markChapterDone} style={styles.stampBtn}>
               ✓ Mark {current.book} {nextChapter} read
             </button>
@@ -367,10 +448,16 @@ function Today({ data, persist, setTab }) {
 }
 
 // ------------------------------------------------------------------- READING
-function Reading({ data, persist }) {
+function Reading({ data, persist, bible }) {
   const { current, finished } = data;
   const chapters = BOOKS.find((b) => b[0] === current.book)?.[1] || 1;
   const doneList = current.done[current.book] || [];
+  const [readChapter, setReadChapter] = useState(1);
+
+  // Keep the reader's chapter valid when the book changes.
+  useEffect(() => {
+    setReadChapter(1);
+  }, [current.book]);
 
   const changeBook = (book) => persist({ ...data, current: { ...current, book } });
   const changePace = (pace) => persist({ ...data, current: { ...current, pace: Math.max(1, Number(pace) || 1) } });
@@ -426,6 +513,29 @@ function Reading({ data, persist }) {
             );
           })}
         </div>
+        <div style={styles.gridHint}>Tap a number to mark it read. Use the reader below to read any chapter.</div>
+      </Card>
+
+      <Card title="Read a chapter">
+        <div style={styles.readPickRow}>
+          <span style={styles.readPickLabel}>{current.book}</span>
+          <select
+            value={readChapter}
+            onChange={(e) => setReadChapter(Number(e.target.value))}
+            style={styles.readPickSelect}
+          >
+            {Array.from({ length: chapters }, (_, i) => i + 1).map((n) => (
+              <option key={n} value={n}>Chapter {n}</option>
+            ))}
+          </select>
+        </div>
+        <PassageReader
+          key={`${current.book}-${readChapter}`}
+          book={current.book}
+          chapter={readChapter}
+          bible={bible}
+          startOpen={true}
+        />
       </Card>
 
       <Card title="Books finished">
@@ -658,6 +768,27 @@ const styles = {
   },
 
   bigRef: { fontSize: 28, color: C.redDeep, fontWeight: 700 },
+  readerWrap: { margin: "14px 0" },
+  readerToggle: {
+    background: "transparent", border: `1px solid ${C.rule}`, color: C.olive,
+    padding: "8px 14px", fontSize: 14, borderRadius: 2, width: "100%",
+  },
+  readerBody: {
+    marginTop: 10, background: C.cream, border: `1px solid ${C.rule}`,
+    borderRadius: 2, padding: "16px 18px",
+  },
+  readerNote: { color: C.faint, fontStyle: "italic", fontSize: 14, lineHeight: 1.5 },
+  readerHead: { fontSize: 18, color: C.redDeep, fontWeight: 700, marginBottom: 10, fontVariant: "small-caps" },
+  readerText: { fontSize: 16, lineHeight: 1.7, color: C.ink, margin: 0, textAlign: "left" },
+  verseNum: { color: C.gold, fontWeight: 700, fontSize: 11, marginRight: 2, verticalAlign: "super" },
+  readerCredit: { marginTop: 14, fontSize: 11, color: C.faint, fontStyle: "italic", textAlign: "right" },
+  readPickRow: { display: "flex", alignItems: "center", gap: 10, marginBottom: 4 },
+  readPickLabel: { fontSize: 16, color: C.redDeep, fontWeight: 700, minWidth: 90 },
+  readPickSelect: {
+    flex: 1, padding: 10, fontSize: 15, fontFamily: "inherit",
+    background: C.cream, border: `1px solid ${C.rule}`, borderRadius: 2, color: C.ink,
+  },
+  gridHint: { fontSize: 12.5, color: C.faint, fontStyle: "italic", marginTop: 10, lineHeight: 1.4 },
   metaLine: { color: C.faint, fontSize: 13, margin: "4px 0 14px" },
   stampBtn: {
     width: "100%",

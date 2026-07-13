@@ -1,12 +1,13 @@
 // Daily Bread service worker — caches the app shell and its CDN dependencies
 // so the app opens and runs with no network after the first visit.
 
-const CACHE = "daily-bread-v1";
+const CACHE = "daily-bread-v2";
 
 const ASSETS = [
   "index.html",
   "app.js",
   "manifest.json",
+  "bible-web.json",
   "icon-180.png",
   "icon-192.png",
   "icon-512.png",
